@@ -23,7 +23,7 @@ exe: path.x
 path.x: path.o mt19937p.o
 	$(CC) $(OMP_CFLAGS) $^ -o $@
 
-path.o: path.c
+path.o: path.c dgemm_mine.c
 	$(CC) -c $(OMP_CFLAGS) $<
 
 path-mpi.x: path-mpi.o mt19937p.o

@@ -1,7 +1,7 @@
-const char* dgemm_desc = "My awesome matmul.";
+//const char* dgemm_desc = "My awesome matmul.";
 
 #include <stdlib.h>
-
+#include <omp.h>
 #ifndef L1_BS
 #define L1_BS ((int) 16*16)
 #endif
@@ -25,8 +25,8 @@ const char* dgemm_desc = "My awesome matmul.";
 void row_to_block(const int M, const int padsize,  const int nblock, const int *restrict A, int *restrict newA)
 {
 	// converts to block indexing and pads the new matrix with zeros so that it is divisble by L1_BS
-	int bi,bj,i,j;	
-	int inf = M +1;
+	int bi,bj,i,j;
+	int inf = padsize+1;
 	for(bi=0; bi < nblock; ++bi){
 		for(bj=0; bj < nblock; ++bj){
 			for(i=0; i < L1_BS; ++i){
@@ -106,7 +106,7 @@ int do_block(const int M, const int nblock,
 	int i, j, k, BA_Ar, BA_Ac, sub_BA_Ar, sub_BA_Ac, BA_C, sub_BA_C;
     __assume_aligned(A, 64);
     __assume_aligned(C, 64);
-
+   int done =1;
 	// BA stands for block adress 
     BA_Ar=(bk*nblock+bi)*L1_BS*L1_BS; // for the column block of old matrix
     BA_Ac=(bj*nblock+bk)*L1_BS*L1_BS; // for the row block of old matrix
@@ -114,19 +114,19 @@ int do_block(const int M, const int nblock,
     for (i = 0; i < L1_BS; ++i) {
 	// finds sub_BA, tells compiler its aligned
 	sub_BA_Ar=BA_Ar+L1_BS*i;
-	__assume(sub_BA_A%128==0);
+	__assume(sub_BA_Ar%128==0);
 	//same for C                
-    sub_BA_C=BA_C+L1_BS*i;
-    __assume(sub_BA_C%128==0);
+ 	sub_BA_C=BA_C+L1_BS*i;
+	__assume(sub_BA_C%128==0);
 
 	for (j = 0; j < L1_BS; ++j){
 	    int cij = C[sub_BA_C+j];
             for (k = 0; k < L1_BS; ++k) {
                 __assume(sub_BA_Ac%128==0); // need to change factor since int are smaller than float
                 sub_BA_Ac=BA_Ac+L1_BS*k;
-                if (A[sub_BA_A+k] + B[sub_BA_B+k] < cij){
-					cij = A[sub_BA_Ar+k] + B[sub_BA_Ac+j];
-                    done=0;
+                if (A[sub_BA_Ar+k] + A[sub_BA_Ac+j] < cij){
+			cij = A[sub_BA_Ar+k] + A[sub_BA_Ac+j];
+                   	 done=0;
 				}
 		}
 	 C[sub_BA_C+j]= cij;
@@ -135,8 +135,14 @@ int do_block(const int M, const int nblock,
 }
 
 
-void setup_indices(const int M, const int *A, const int *C, int *bA, int *bC, int *pad_size, int *nblock, int *L1nblock, int *rem)
-{
+void setup_indices(
+	const int M, 
+	const int* A, const int* C, 
+	int* bA, int* bC, 
+	int* pad_size, int* nblock, 
+	int* L1nblock, int* L2nblock, 
+	int* rem
+) {
 	/* pad size : size of matrix after padding
 	   block i= row index of block
 	   block j = column index of block
@@ -148,45 +154,50 @@ void setup_indices(const int M, const int *A, const int *C, int *bA, int *bC, in
 	   Ai, Aj, Ak : "addresses of i j k loops"
 	*/
 
-
+	printf("starting setup \n");
 
 	if (M%L1_BS==0){
-		nblock=M/L1_BS;
-		pad_size=M;
+		*nblock=M/L1_BS;
+		*pad_size=M;
 	}
 	else{ 
-		pad_size=((M/L1_BS)+1)*L1_BS;
-		nblock=M/L1_BS+1;
+		*pad_size=((M/L1_BS)+1)*L1_BS;
+		*nblock=M/L1_BS+1;
 	}
 	
 	// number of L2
 
-	if(pad_size%(L2_BS*L1_BS)==0){
-	L2nblock=pad_size/(L2_BS*L1_BS);
+	if(*pad_size%(L2_BS*L1_BS)==0){
+	*L2nblock=*pad_size/(L2_BS*L1_BS);
 	// define remainder to be a whole block in this case for consistency
-	 rem = L2_BS;}
+	 *rem = L2_BS;}
 
-	else{L2nblock=pad_size/(L2_BS*L1_BS)+1;
-	     rem= (pad_size%(L2_BS*L1_BS))/L1_BS;	}
+	else{*L2nblock=*pad_size/(L2_BS*L1_BS)+1;
+	     *rem= (*pad_size%(L2_BS*L1_BS))/L1_BS;	}
 
 	
-	int *restrict bA= (int*) _mm_malloc(pad_size*pad_size*sizeof(int),64);
-	int *restrict bC= (int*) _mm_malloc(pad_size*pad_size*sizeof(int),64);
+	bA= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
+	bC= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
 	
 
 	// change indexing
-	row_to_block(M,nblock, A, bA);
-	row_to_block(M,nblock, C, bC);
+	row_to_block(M, *nblock, *pad_size,  A, bA);
+	row_to_block(M, *nblock, *pad_size, C, bC);
     
   }
 
-done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L1nblock, int rem)
+/* 
+ *
+ */
+int square_dgemm(const int M,
+		 const int *bA, int *bC,
+		 const int  pad_size,const int nblock,const  int L1nblock, const int L2nblock, const int rem)
     {
 
-	int pbi, bj, bk, L2bi, L2bj, L2bk;
+    int bi, bj, bk, L2bi, L2bj, L2bk;
     int done=1;
 		// MAIN LOOP
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bk=0; L2bk < L2nblock-1; ++L2bk){
 	for (L2bj=0; L2bj < L2nblock-1; ++L2bj){
 	for (L2bi=0; L2bi < L2nblock-1; ++L2bi){
@@ -195,9 +206,9 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 		for (bj = 0; bj < L2_BS; ++bj) {
 			int Aj=L2bj*L2_BS+bj;
 			for (bi = 0; bi < L2_BS; ++bi) {
-				int Ai=L2bi*L2_BS+bi;	
-	
-				done=do_block(M, nblock, bA, bC, Ai, Aj, Ak);}
+				int Ai=L2bi*L2_BS+bi;
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
+			}
 			}
 		}
 	}
@@ -217,12 +228,12 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	// 6: k1 j0 i1
 	// 7: k0 j0 i1
 	// 8: k1 j1 i1
-	//printf("we got here\n");
+	//printf"we got here\n");
 	
 
 	// case 2 k1 j0 i0
 	L2bk=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bj=0; L2bj < L2nblock-1; ++L2bj){
 	for (L2bi=0; L2bi < L2nblock-1; ++L2bi){
 	for (bk = 0; bk < rem; ++bk) {
@@ -231,7 +242,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 			int Aj=L2bj*L2_BS+bj;
 			for (bi = 0; bi < L2_BS; ++bi) {
 				int Ai=L2bi*L2_BS+bi;	
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
            
 			
 		}
@@ -242,7 +253,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
     
 	// case 3: k0 j1 i0
 	L2bj=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bk=0; L2bk < L2nblock-1; ++L2bk){
 	for (L2bi=0; L2bi < L2nblock-1; ++L2bi){
 	for (bk = 0; bk < L2_BS; ++bk) {
@@ -251,7 +262,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 			int Aj=L2bj*L2_BS+bj;
 			for (bi = 0; bi < L2_BS; ++bi) {
 				int Ai=L2bi*L2_BS+bi;	
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA,  bC, Ai, Aj, Ak);
                                 
 			
 		}
@@ -261,7 +272,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	}
 	// case 4: k0 j0 i1
 	L2bi=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bk=0; L2bk < L2nblock-1; ++L2bk){
 	for (L2bj=0; L2bj < L2nblock-1; ++L2bj){
 	for (bk = 0; bk < L2_BS; ++bk) {
@@ -270,7 +281,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 			int Aj=L2bj*L2_BS+bj;
 			for (bi = 0; bi < rem; ++bi) {
 				int Ai=L2bi*L2_BS+bi;	
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
                                
 			
 		}
@@ -280,11 +291,10 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	}
 
 
-
 	// case 5: k1 j1 i0
 	L2bj=L2nblock-1;
 	L2bk=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bi=0; L2bi < L2nblock-1; ++L2bi){
 	for (bk = 0; bk < rem; ++bk) {
 		int Ak=L2bk*L2_BS +bk;
@@ -292,9 +302,8 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 			int Aj=L2bj*L2_BS+bj;
 			for (bi = 0; bi < L2_BS; ++bi) {
 
-				int Ai=L2bi*L2_BS+bi;	
-                       
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				int Ai=L2bi*L2_BS+bi;	               
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
 			}		
 		}
 	}
@@ -303,7 +312,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	// case 6: k1 j0 i1
 	L2bi=L2nblock-1;
 	L2bk=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bj=0; L2bj < L2nblock-1; ++L2bj){
 	for (bk = 0; bk < rem; ++bk) {
 		int Ak=L2bk*L2_BS +bk;
@@ -313,7 +322,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 
 				int Ai=L2bi*L2_BS+bi;	
                        
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
 			}		
 		}
 	}
@@ -321,7 +330,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	// case 7: k0 j1 i1
 	L2bj=L2nblock-1;
 	L2bi=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bk=0; L2bk < L2nblock-1; ++L2bk){
 	for (bk = 0; bk < L2_BS; ++bk) {
 		int Ak=L2bk*L2_BS +bk;
@@ -331,7 +340,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 
 				int Ai=L2bi*L2_BS+bi;	
                        
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
 			}		
 		}
 	}
@@ -340,7 +349,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	L2bj=L2nblock-1;
 	L2bj=L2nblock-1;
  	L2bi=L2nblock-1;
-    #pragma omp for shared(bA, bC) reduction(&& : done)
+    #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (bk = 0; bk < rem; ++bk) {
 		int Ak=L2bk*L2_BS +bk;
 		for (bj = 0; bj < rem; ++bj) {
@@ -349,7 +358,7 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 				int Ai=L2bi*L2_BS+bi;	
 
         
-				done=do_block(M, nblock, bA, bB, bC, Ai, Aj, Ak);
+				done=done&&do_block(M, nblock, bA, bC, Ai, Aj, Ak);
 			
 		}
 	}
@@ -357,7 +366,6 @@ done square_dgemm(const int M, const int *A, int *C, pad_size, int nblock, int L
 	
 	
 		
-// reindex back to column
-	block_to_row(M,nblock,C,bC);
+	return done;
 }
 

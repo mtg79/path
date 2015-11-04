@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <omp.h>
 #include "mt19937p.h"
-
+#include "dgemm_mine.c"
 //ldoc on
 /**
  * # The basic recurrence
@@ -111,19 +111,22 @@ void shortest_paths(int n, int* restrict l)
         l[i] = 0;
     // Repeated squaring until nothing changes
     int* restrict lnew = (int*) calloc(n*n, sizeof(int));
-    memcpy(lnew, l, n*n * sizeof(int)); not needed?
+    memcpy(lnew, l, n*n * sizeof(int));// not needed?
     int *restrict bl; //block l
     int *restrict blnew; //block lnew
     
-    int *pad_size, *nblock, *L1block, *rem;
-    setup_indices(n, l, lnew, bl, blnew, pad_size, nblock, L1block, rem); // puts indices in blocks
+    int* pad_size; int* nblock; int* L1block; int* L2nblock; int* rem;
+    setup_indices(n, l, lnew, bl, blnew, pad_size, nblock, L1block, L2nblock, rem); // puts indices in blocks
+    printf("done with init\n ");
     
     for (int done = 0; !done; ) {
-        done = square_dgemm(n, bl, blnew, pad_size, nblock, L1block, rem);
-        memcpy(l, lnew, n*n * sizeof(int));
+        done = square_dgemm(n, bl, blnew, *pad_size, *nblock, *L1block, *L2nblock, *rem);
+	printf("done with iteration\n");
+        memcpy(bl, blnew, (*pad_size)*(*pad_size) * sizeof(int));
     }
+    free(blnew);
     free(lnew);
-    block_to_row(n,nblock, l, bl);
+    block_to_row(n, *nblock, l, bl);
     deinfinitize(n, l);
 }
 
