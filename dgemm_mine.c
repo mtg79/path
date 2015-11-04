@@ -2,6 +2,9 @@
 
 #include <stdlib.h>
 #include <omp.h>
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
 #ifndef L1_BS
 #define L1_BS ((int) 16*16)
 #endif
@@ -107,6 +110,7 @@ int do_block(const int M, const int nblock,
     __assume_aligned(A, 64);
     __assume_aligned(C, 64);
    int done =1;
+   printf("nblock: %d", nblock);
 	// BA stands for block adress 
     BA_Ar=(bk*nblock+bi)*L1_BS*L1_BS; // for the column block of old matrix
     BA_Ac=(bj*nblock+bk)*L1_BS*L1_BS; // for the row block of old matrix
@@ -124,6 +128,10 @@ int do_block(const int M, const int nblock,
             for (k = 0; k < L1_BS; ++k) {
                 __assume(sub_BA_Ac%128==0); // need to change factor since int are smaller than float
                 sub_BA_Ac=BA_Ac+L1_BS*k;
+		if ( sub_BA_Ar+ k >= nblock*L1_BS*nblock*L1_BS ){ printf("BA_Ar %d, BA_Ac %d, BA_C %d, bi : %d, bj: %d, bk %d,  sub_BA_Ar+ k: %d, pad size:%d \n "
+,BA_Ar, BA_Ac, BA_C, bi, bj, bk, sub_BA_Ar +k, nblock*L1_BS*nblock*L1_BS);
+		assert (sub_BA_Ar+ k< nblock*L1_BS);  }
+		assert( sub_BA_Ac+j < nblock*L1_BS*nblock*L1_BS); 
                 if (A[sub_BA_Ar+k] + A[sub_BA_Ac+j] < cij){
 			cij = A[sub_BA_Ar+k] + A[sub_BA_Ac+j];
                    	 done=0;
@@ -153,9 +161,8 @@ void setup_indices(
            rem : remainder of blocks after l2 blocking
 	   Ai, Aj, Ak : "addresses of i j k loops"
 	*/
-
 	printf("starting setup \n");
-
+	printf(" M: %d, L1_BS:%d M/L1_BS: %d\n ", M, L1_BS, M/L1_BS);
 	if (M%L1_BS==0){
 		*nblock=M/L1_BS;
 		*pad_size=M;
@@ -166,7 +173,6 @@ void setup_indices(
 	}
 	
 	// number of L2
-
 	if(*pad_size%(L2_BS*L1_BS)==0){
 	*L2nblock=*pad_size/(L2_BS*L1_BS);
 	// define remainder to be a whole block in this case for consistency
@@ -175,15 +181,15 @@ void setup_indices(
 	else{*L2nblock=*pad_size/(L2_BS*L1_BS)+1;
 	     *rem= (*pad_size%(L2_BS*L1_BS))/L1_BS;	}
 
-	
+
+	printf("done allocating \n");
 	bA= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
 	bC= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
-	
-
+	printf("padsize: %d \n", *pad_size);
 	// change indexing
 	row_to_block(M, *nblock, *pad_size,  A, bA);
 	row_to_block(M, *nblock, *pad_size, C, bC);
-    
+    	
   }
 
 /* 
@@ -196,7 +202,7 @@ int square_dgemm(const int M,
 
     int bi, bj, bk, L2bi, L2bj, L2bk;
     int done=1;
-		// MAIN LOOP
+	// MAIN LOOP
     #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (L2bk=0; L2bk < L2nblock-1; ++L2bk){
 	for (L2bj=0; L2bj < L2nblock-1; ++L2bj){
@@ -215,8 +221,9 @@ int square_dgemm(const int M,
 	}
 	}
 
+	printf("finished main loop \n");
 
-	
+		
 
 	// ADDITIONAL LOOPS TO AVOID IF STATEMENTS
 	// there are 8 cases: (we denote j not at boundary by j0 and j at boundary with j1
@@ -250,7 +257,8 @@ int square_dgemm(const int M,
 	}
 	}
 	}
-    
+    	printf("done with case 2\n");
+
 	// case 3: k0 j1 i0
 	L2bj=L2nblock-1;
     #pragma omp parallel for shared(bA, bC) reduction(&& : done)
@@ -270,6 +278,7 @@ int square_dgemm(const int M,
 	}
 	}
 	}
+	printf("done with case 3");
 	// case 4: k0 j0 i1
 	L2bi=L2nblock-1;
     #pragma omp parallel for shared(bA, bC) reduction(&& : done)
@@ -289,7 +298,8 @@ int square_dgemm(const int M,
 	}
 	}
 	}
-
+	printf("done with case 4");
+	
 
 	// case 5: k1 j1 i0
 	L2bj=L2nblock-1;
@@ -345,10 +355,12 @@ int square_dgemm(const int M,
 		}
 	}
 	}
+	
 	// case 8: k1 j1 i1
-	L2bj=L2nblock-1;
+	L2bk=L2nblock-1;
 	L2bj=L2nblock-1;
  	L2bi=L2nblock-1;
+	printf("Ai = %d, pad_size %d \n", L2bk*L2_BS + rem-1, pad_size);
     #pragma omp parallel for shared(bA, bC) reduction(&& : done)
 	for (bk = 0; bk < rem; ++bk) {
 		int Ak=L2bk*L2_BS +bk;
@@ -365,7 +377,7 @@ int square_dgemm(const int M,
 	}
 	
 	
-		
+	assert(0);	
 	return done;
 }
 

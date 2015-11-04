@@ -115,7 +115,10 @@ void shortest_paths(int n, int* restrict l)
     int *restrict bl; //block l
     int *restrict blnew; //block lnew
     
-    int* pad_size; int* nblock; int* L1block; int* L2nblock; int* rem;
+    int* pad_size=malloc(sizeof(int)); int* nblock=malloc(sizeof(int));
+    int* L1block=malloc(sizeof(int)); int* L2nblock=malloc(sizeof(int));
+    int* rem =malloc(sizeof(int));
+   
     setup_indices(n, l, lnew, bl, blnew, pad_size, nblock, L1block, L2nblock, rem); // puts indices in blocks
     printf("done with init\n ");
     
@@ -210,7 +213,7 @@ const char* usage =
     "  - o -- file name where output matrix should be stored (none)\n";
 
 int main(int argc, char** argv)
-{
+{   printf("got here \n");
     int n    = 200;            // Number of nodes
     double p = 0.05;           // Edge probability
     const char* ifname = NULL; // Adjacency matrix file name
