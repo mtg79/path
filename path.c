@@ -109,15 +109,21 @@ void shortest_paths(int n, int* restrict l)
     infinitize(n, l);
     for (int i = 0; i < n*n; i += n+1)
         l[i] = 0;
-
     // Repeated squaring until nothing changes
     int* restrict lnew = (int*) calloc(n*n, sizeof(int));
-    memcpy(lnew, l, n*n * sizeof(int));
+    memcpy(lnew, l, n*n * sizeof(int)); not needed?
+    int *restrict bl; //block l
+    int *restrict blnew; //block lnew
+    
+    int *pad_size, *nblock, *L1block, *rem;
+    setup_indices(n, l, lnew, bl, blnew, pad_size, nblock, L1block, rem); // puts indices in blocks
+    
     for (int done = 0; !done; ) {
-        done = square(n, l, lnew);
+        done = square_dgemm(n, bl, blnew, pad_size, nblock, L1block, rem);
         memcpy(l, lnew, n*n * sizeof(int));
     }
     free(lnew);
+    block_to_row(n,nblock, l, bl);
     deinfinitize(n, l);
 }
 
