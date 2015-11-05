@@ -131,13 +131,19 @@ int do_block(const int M, const int nblock,
 		if ( sub_BA_Ar+ k >= nblock*L1_BS*nblock*L1_BS ){ printf("BA_Ar %d, BA_Ac %d, BA_C %d, bi : %d, bj: %d, bk %d,  sub_BA_Ar+ k: %d, pad size:%d \n "
 ,BA_Ar, BA_Ac, BA_C, bi, bj, bk, sub_BA_Ar +k, nblock*L1_BS*nblock*L1_BS);
 		assert (sub_BA_Ar+ k< nblock*L1_BS);  }
-		assert( sub_BA_Ac+j < nblock*L1_BS*nblock*L1_BS); 
+		assert( sub_BA_Ac+j < nblock*L1_BS*nblock*L1_BS);
+	//	int test = A[nblock*L1_BS*nblock*L1_BS+10];
+	
                 if (A[sub_BA_Ar+k] + A[sub_BA_Ac+j] < cij){
-			cij = A[sub_BA_Ar+k] + A[sub_BA_Ac+j];
-                   	 done=0;
+			cij = A[sub_BA_Ar+k] + A[sub_BA_Ac+j]; 
+			done=0;
 				}
 		}
-	 C[sub_BA_C+j]= cij;
+	assert(sub_BA_C+j < nblock*nblock*L1_BS*L1_BS); 
+	//C[nblock*nblock*L1_BS*L1_BS-1]=3;
+	printf("size of cij: %d, size of entry of C: %d \n", sizeof(cij), sizeof(C[nblock*nblock*L1_BS*L1_BS-1]));	
+printf("size: %d \n",nblock*nblock*L1_BS*L1_BS);	assert(0);
+	C[sub_BA_C+j]= cij;
         }
     }
 }
@@ -185,10 +191,11 @@ void setup_indices(
 	printf("done allocating \n");
 	bA= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
 	bC= (int*) _mm_malloc((*pad_size)*(*pad_size)*sizeof(int),64);
-	printf("padsize: %d \n", *pad_size);
+	bC[(*pad_size)*(*pad_size)-1]=3;
+	printf("padsize: %d \n", (*pad_size)*(*pad_size));
 	// change indexing
 	row_to_block(M, *nblock, *pad_size,  A, bA);
-	row_to_block(M, *nblock, *pad_size, C, bC);
+	//row_to_block(M, *nblock, *pad_size, C, bC);
     	
   }
 
@@ -376,8 +383,7 @@ int square_dgemm(const int M,
 	}
 	}
 	
-	
-	assert(0);	
+	assert(0);
 	return done;
 }
 

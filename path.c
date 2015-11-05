@@ -112,8 +112,8 @@ void shortest_paths(int n, int* restrict l)
     // Repeated squaring until nothing changes
     int* restrict lnew = (int*) calloc(n*n, sizeof(int));
     memcpy(lnew, l, n*n * sizeof(int));// not needed?
-    int *restrict bl; //block l
-    int *restrict blnew; //block lnew
+    int* bl; //block l
+    int* blnew; //block lnew
     
     int* pad_size=malloc(sizeof(int)); int* nblock=malloc(sizeof(int));
     int* L1block=malloc(sizeof(int)); int* L2nblock=malloc(sizeof(int));
