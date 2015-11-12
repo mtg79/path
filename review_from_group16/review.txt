@@ -1,0 +1,10 @@
+What you did well:
+
+- Finished a reasonable amount of work so far, i.e., profiled your code and took an initial pass at the MPI implementation.
+- Good analysis of the performance of the baseline OpenMP implementation.
+- We were planning on trying a similar MPI implementation strategy to yours but didn’t get this particular strategy working before the deadline, so it was cool to see that someone else did. I’m curious as to why the performance of this strategy is slightly worse than that of the OpenMP implementation though.
+
+Suggestions for improvement:
+- Discuss what graph sizes you were trying in the profiling section. In general, trying things out on a range of graphs and plotting the results would be a good idea.
+- It would have been nice to see more data in the writeup, be it in the form of hotspot analyzer outputs or plots such as weak scaling and strong scaling studies.
+- We would have liked to hear about which tuning strategies you are considering, and whether you plan on trying to get the OpenMP implementation or the MPI implementation up to speed.
