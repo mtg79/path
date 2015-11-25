@@ -1,0 +1,8 @@
+Review from group 15:
+Things you are doing well:
+- You identified from the VTune report that there may be issues with thread load balancing and cache utilization.
+- You have completed an MPI implementation.
+- You remembered to use _mm_ intrinsics.
+Things you can improve on:
+- You may need to improve your MPI implementation such that it is able to handle non-square number of processors.
+- You could try other ways of tuning the code like the methods in matmul, in addition to blocking.
